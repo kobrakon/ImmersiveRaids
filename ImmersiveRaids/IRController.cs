@@ -36,10 +36,10 @@ namespace ImmersiveRaids
                 eventTimer = 0f;
                 timeToNextEvent = UnityEngine.Random.Range(1800f, 3600f); // 30 min to hour
             }
-            if (Singleton<GClass1173>.Instance != null && Singleton<GClass1173>.Instance.Health != null && Singleton<GClass1173>.Instance.Health.Effects != null && Singleton<GClass1173>.Instance.Health.Effects.Existence != null)
+            if (Singleton<BackendConfigSettingsClass>.Instance != null && Singleton<BackendConfigSettingsClass>.Instance.Health != null && Singleton<BackendConfigSettingsClass>.Instance.Health.Effects != null && Singleton<BackendConfigSettingsClass>.Instance.Health.Effects.Existence != null)
             {
-                Singleton<GClass1173>.Instance.Health.Effects.Existence.EnergyDamage = 0.75f;
-                Singleton<GClass1173>.Instance.Health.Effects.Existence.HydrationDamage = 0.75f;
+                Singleton<BackendConfigSettingsClass>.Instance.Health.Effects.Existence.EnergyDamage = 0.75f;
+                Singleton<BackendConfigSettingsClass>.Instance.Health.Effects.Existence.HydrationDamage = 0.75f;
             }
         }
 
