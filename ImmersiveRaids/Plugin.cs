@@ -1,7 +1,7 @@
-﻿using BepInEx;
+using BepInEx;
 using UnityEngine;
 using BepInEx.Logging;
-using EFT.Weather;
+using BepInEx.Configuration;
 
 namespace ImmersiveRaids
 {
@@ -9,22 +9,31 @@ namespace ImmersiveRaids
     public class Plugin : BaseUnityPlugin
     {
         internal static GameObject Hook;
+        internal static IRController Script;
         internal static ManualLogSource logger;
+        internal static ConfigEntry<bool> InvertTime;
+        internal static ConfigEntry<bool> EnableEvents;
+
         void Awake()
         {
             logger = Logger;
             Logger.LogInfo("Loading Immersive Raids");
             Hook = new GameObject("IR Object");
-            Hook.AddComponent<IRController>();
+            Script = Hook.AddComponent<IRController>();
             DontDestroyOnLoad(Hook);
-            // not sure if all of these are really necessary but im not gonna gamble and find out
+            InvertTime = Config.Bind("Raid Settings", "Invert Time", false, "Inverts raid time i.e. 8pm becomes 8am");
+            EnableEvents = Config.Bind("Raid Settings", "Enable Dynamic Events", true, "Dictates whether the dynamic event timer should increment and allow events to run or not.\nNote that this DOES NOT stop events that are already running!");
+
             new JSONTimePatch().Enable();
-            new RaidTimerPatch().Enable();
+            new RaidTimePatch().Enable();
             new GameWorldPatch().Enable();
             new UIPanelPatch().Enable();
             new TimerUIPatch().Enable();
             new EventExfilPatch().Enable();
             new WeatherControllerPatch().Enable();
+            new BotDiedPatch().Enable();
+            new ExistencePatch().Enable();
+            new WatchPatch().Enable();
         }
     }
 }
