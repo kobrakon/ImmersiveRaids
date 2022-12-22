@@ -2,9 +2,9 @@ using EFT;
 using System;
 using UnityEngine;
 using System.Linq;
-using EFT.Weather;
 using Comfort.Common;
 using EFT.Interactive;
+using EFT.HealthSystem;
 using System.Reflection;
 using EFT.InventoryLogic;
 using EFT.Communications;
@@ -22,10 +22,17 @@ namespace ImmersiveRaids
 
         void Update()
         {
-            if (!Ready()) { timer = 0f; eventTimer = 0f; return; }
+            if (!Ready()) 
+            {
+                timer = 0f;
+                eventTimer = 0f;
+                return; 
+            }
+
             timer += Time.deltaTime;
-            eventTimer += Time.deltaTime;
-            if (timer >= 3600f)
+            if (Plugin.EnableEvents.Value) eventTimer += Time.deltaTime;
+
+            if (timer >= 2700f)
             {
                 QueueCleanup();
                 timer = 0f;                                                                                                                                                                                                                    
@@ -36,11 +43,6 @@ namespace ImmersiveRaids
                 eventTimer = 0f;
                 timeToNextEvent = UnityEngine.Random.Range(1800f, 3600f); // 30 min to hour
             }
-            if (Singleton<GClass1173>.Instance != null && Singleton<GClass1173>.Instance.Health != null && Singleton<GClass1173>.Instance.Health.Effects != null && Singleton<GClass1173>.Instance.Health.Effects.Existence != null)
-            {
-                Singleton<GClass1173>.Instance.Health.Effects.Existence.EnergyDamage = 0.75f;
-                Singleton<GClass1173>.Instance.Health.Effects.Existence.HydrationDamage = 0.75f;
-            }
         }
 
         async void QueueCleanup()
@@ -49,14 +51,9 @@ namespace ImmersiveRaids
 
             await Task.Delay(30000);
 
-            // stinky for statement
-            for (int i = 0; i < gameWorld.AllPlayers.Count; i++) 
+            foreach (BotOwner bot in FindObjectsOfType<BotOwner>())
             {
-                if (gameWorld.AllPlayers[i] == null) break;
-                if (!gameWorld.AllPlayers[i].HealthController.IsAlive)
-                {
-                    Destroy(gameWorld.AllPlayers[i]);
-                }
+                if (!bot.HealthController.IsAlive) bot.gameObject.SetActive(false);
             }
 
             if (player.Location != "Factory" && player.Location != "Laboratory")
@@ -66,9 +63,9 @@ namespace ImmersiveRaids
             }
         }
 
-        void DoRandomEvent()
+        void DoRandomEvent(bool skipFunny = false)
         {
-            float rand = UnityEngine.Random.Range(0, 4);
+            float rand = UnityEngine.Random.Range(0, 5);
 
             switch (rand)
             {
@@ -76,8 +73,9 @@ namespace ImmersiveRaids
                     DoArmorRepair();
                 break;
                 case 1:
-                    //DoNoBatteriesEvent();
-                    goto case 2;
+                    if (skipFunny) DoRandomEvent();
+                    DoFunny();
+                break;
                 case 2:
                     DoBlackoutEvent();
                 break;
@@ -88,13 +86,22 @@ namespace ImmersiveRaids
                 case 4:
                     DoLockDownEvent();
                 break;
+                case 5:
+                    ValueStruct health = player.ActiveHealthController.GetBodyPartHealth(EBodyPart.Common);
+                    if (health.Current != health.Maximum)
+                    {
+                        DoHealPlayer();
+                        break;
+                    } else DoRandomEvent();
+                break;
             }
         }
-        /*/
-        void DoNoBatteriesEvent()
-        {
 
-        }/**/
+        void DoHealPlayer()
+        {
+            NotificationManagerClass.DisplayMessageNotification("Heal Event: On your feet you ain't dead yet.");
+            player.ActiveHealthController.RestoreFullHealth();
+        }
 
         void DoArmorRepair()
         {
@@ -111,6 +118,14 @@ namespace ImmersiveRaids
             NotificationManagerClass.DisplayMessageNotification("Aidrop Event: Incoming Airdrop!", ENotificationDurationType.Long, ENotificationIconType.Default);
         }
 
+        async void DoFunny()
+        {
+            NotificationManagerClass.DisplayMessageNotification("Heart Attack Event: Nice knowing ya, you've got 10 seconds", ENotificationDurationType.Long, ENotificationIconType.Alert);
+            await Task.Delay(10000);
+            NotificationManagerClass.DisplayMessageNotification("jk", ENotificationDurationType.Long, ENotificationIconType.Default);
+            await Task.Delay(2000); DoRandomEvent(true);
+        }
+
         async void DoLockDownEvent()
         {
             NotificationManagerClass.DisplayMessageNotification("Lockdown Event: All extracts are unavaliable for 15 minutes", ENotificationDurationType.Long, ENotificationIconType.Alert);
@@ -125,28 +140,45 @@ namespace ImmersiveRaids
             LampController[] dontChangeOnEnd = new LampController[0];
             Dictionary<KeycardDoor, string[]> keys = new Dictionary<KeycardDoor, string[]>();
 
-            Array.ForEach(FindObjectsOfType<Switch>(), (Switch pSwitch) => 
+            foreach (Switch pSwitch in FindObjectsOfType<Switch>())
             {
-                pSwitch.GetType().GetMethod("Close", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, new object[0]);
-                pSwitch.GetType().GetMethod("Lock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, new object[0]);
-            });
-            Array.ForEach(FindObjectsOfType<LampController>(), (LampController lamp) => { if (lamp.Enabled == false) { dontChangeOnEnd.Append(lamp); return; } lamp.Switch(Turnable.EState.Off); });
-            Array.ForEach(FindObjectsOfType<KeycardDoor>(), (KeycardDoor door) =>
+                typeof(Switch).GetMethod("Close", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, new object[0]);
+                typeof(Switch).GetMethod("Lock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, new object[0]);
+            }
+
+            foreach (LampController lamp in FindObjectsOfType<LampController>())
+            {
+                if (lamp.Enabled == false) 
+                { 
+                    dontChangeOnEnd.Append(lamp); 
+                    continue; 
+                } 
+                lamp.Switch(Turnable.EState.Off);
+                lamp.gameObject.GetComponentInChildren<Light>().enabled = false;
+            }
+
+            foreach (KeycardDoor door in FindObjectsOfType<KeycardDoor>())
             {
                 typeof(KeycardDoor).GetMethod("Lock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(door, new object[0]);
                 keys.Add(door, (string[])typeof(KeycardDoor).GetField("_additionalKeys", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(door));
                 AudioSource.PlayClipAtPoint(door.DeniedBeep, door.gameObject.transform.position);
-            });
+            }
 
             NotificationManagerClass.DisplayMessageNotification("Blackout Event: All power switches and lights disabled for 10 minutes", ENotificationDurationType.Long, ENotificationIconType.Alert);
 
             await Task.Delay(600000);
 
-            Array.ForEach(FindObjectsOfType<Switch>(), (Switch pSwitch) => 
+            foreach(Switch pSwitch in FindObjectsOfType<Switch>())
             {
-                pSwitch.GetType().GetMethod("Unlock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, new object[0]);
-            });
-            Array.ForEach(FindObjectsOfType<LampController>(), (LampController lamp) => { if (dontChangeOnEnd.Contains(lamp)) return; lamp.Switch(Turnable.EState.On); });
+                typeof(Switch).GetMethod("Unlock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, new object[0]);
+            }
+
+            foreach (LampController lamp in FindObjectsOfType<LampController>())
+            {
+                if (dontChangeOnEnd.Contains(lamp)) return; 
+                lamp.Switch(Turnable.EState.On);
+                lamp.gameObject.GetComponentInChildren<Light>().enabled = true;
+            }
 
             foreach (KeyValuePair<KeycardDoor, string[]> entry in keys)
             {
@@ -154,9 +186,9 @@ namespace ImmersiveRaids
             }
             keys.Clear();
             NotificationManagerClass.DisplayMessageNotification("Blackout Event over", ENotificationDurationType.Long, ENotificationIconType.Quest);
-        }
+        }   
 
-        bool Ready() => gameWorld != null && gameWorld.AllPlayers != null && gameWorld.AllPlayers.Count > 0 && !(player is HideoutPlayer);
+        public bool Ready() => gameWorld != null && gameWorld.AllPlayers != null && gameWorld.AllPlayers.Count > 0 && !(player is HideoutPlayer);
 
         Player player
         { get => gameWorld.AllPlayers[0]; }
