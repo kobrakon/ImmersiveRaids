@@ -1,28 +1,77 @@
 using EFT;
 using TMPro;
+using EFT.UI;
 using System;
 using JsonType;
+using System.Linq;
+using UnityEngine;
 using EFT.Weather;
 using UnityEngine.UI;
 using Comfort.Common;
 using EFT.Interactive;
 using EFT.UI.Matchmaker;
 using System.Reflection;
+using EFT.InventoryLogic;
 using EFT.UI.BattleTimer;
 using EFT.Communications;
-using Aki.Reflection.Patching;
+using Aki.Custom.Airdrops;
 using System.Threading.Tasks;
+using Aki.Reflection.Patching;
+using Aki.Custom.Airdrops.Utils;
+using System.Collections.Generic;
+using Aki.Custom.Airdrops.Models;
 
 namespace ImmersiveRaids
 {
+    public struct RaidTime
+    {
+        private static DateTime lastTime;
+        public static DateTime GetDateTime() => 
+            Plugin.InvertTime.Value ? 
+            ShouldChange() ? 
+            lastTime = DateTime.Now.AddHours(InverseTimeDiff()) : 
+            lastTime.Hour == DateTime.Now.Hour ? 
+            lastTime = DateTime.Now : 
+            lastTime = DateTime.Now.AddHours(InverseTimeDiff()) :
+            ShouldChange() ? 
+            lastTime = DateTime.Now : 
+            lastTime.Hour != DateTime.Now.Hour ? 
+            lastTime = DateTime.Now.AddHours(InverseTimeDiff()) :
+            lastTime = DateTime.Now;
+
+        private static double InverseTimeDiff() => DateTime.Now.Hour >= 12 ? -12 : 12;
+        private static bool ShouldChange() => !Plugin.Script.Ready();
+    }
+
     public class GameWorldPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod() => typeof(GameWorld).GetMethod("OnGameStarted", BindingFlags.Instance | BindingFlags.Public);
 
         [PatchPostfix]
-        static void PostFix(GameWorld __instance)
+        static void Postfix(GameWorld __instance)
         {
-            __instance.GameDateTime.Reset(DateTime.Now, DateTime.Now, 1);
+            DateTime time = RaidTime.GetDateTime();
+            __instance.GameDateTime.Reset(time, time, 1);
+        }
+    }
+
+    public class BotDiedPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod() => typeof(BotControllerClass).GetMethod("BotDied", BindingFlags.Instance | BindingFlags.Public);
+
+        [PatchPostfix]
+        static void Postfix(ref BotSpawnerClass ___gclass1324_0, int ___int_0) => ___gclass1324_0.SetMaxBots(___int_0++);
+    }
+
+    public class ExistencePatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod() => typeof(GClass1926.GClass1927).GetConstructor(new Type[0]);
+
+        [PatchPostfix]
+        static void Postfix(ref GClass1926.GClass1927 __instance)
+        {
+            __instance.EnergyDamage = 0.75f;
+            __instance.HydrationDamage = 0.75f;
         }
     }
 
@@ -31,19 +80,20 @@ namespace ImmersiveRaids
         protected override MethodBase GetTargetMethod() => typeof(LocationWeatherTime).GetConstructor(BindingFlags.Instance | BindingFlags.Public, null, CallingConventions.HasThis, new Type[] { typeof(WeatherClass), typeof(float), typeof(string), typeof(string) }, null);
 
         [PatchPrefix]
-        static void PreFix(ref string date, ref string time)
+        static void Prefix(ref string date, ref string time)
         {
-            date = DateTime.Now.ToShortDateString();
-            time = DateTime.Now.ToString("HH:mm:ss");
+            var raidTime = RaidTime.GetDateTime();
+            date = raidTime.ToShortDateString();
+            time = raidTime.ToString("HH:mm:ss");
         }
     }
 
-    public class RaidTimerPatch : ModulePatch
+    public class RaidTimePatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod() => typeof(AbstractGame).GetMethod("UpdateExfiltrationUi", BindingFlags.Instance | BindingFlags.NonPublic);
 
         [PatchPostfix]
-        static void PostFix(ref AbstractGame __instance)
+        static void Postfix(ref AbstractGame __instance)
         {
             __instance.GameTimer.ChangeSessionTime(new TimeSpan(99999999999999));
         }
@@ -54,11 +104,16 @@ namespace ImmersiveRaids
         protected override MethodBase GetTargetMethod() => typeof(LocationConditionsPanel).GetMethod("method_0", BindingFlags.Instance | BindingFlags.NonPublic);
 
         [PatchPostfix]
-        static void PostFix(ref Toggle ____amTimeToggle, ref TextMeshProUGUI ____currentPhaseTime, ref TextMeshProUGUI ____nextPhaseTime)
+        static void Postfix(ref Toggle ____amTimeToggle, ref TextMeshProUGUI ____currentPhaseTime, ref TextMeshProUGUI ____nextPhaseTime, bool ____takeFromCurrent)
         {
-            ____amTimeToggle.gameObject.SetActive(false);
-            ____currentPhaseTime.enabled = false;
-            ____nextPhaseTime.text = DateTime.Now.ToString("HH:mm:ss");
+            var raidTime = RaidTime.GetDateTime();
+            if (____amTimeToggle.gameObject != null && ____currentPhaseTime.gameObject != null)
+            {
+                ____amTimeToggle.gameObject.SetActive(false);
+                ____currentPhaseTime.gameObject.SetActive(false);
+            }
+            ____nextPhaseTime.text = raidTime.ToString("HH:mm:ss");
+            ____currentPhaseTime.text = raidTime.ToString("HH:mm:ss");
         }
     }
 
@@ -67,11 +122,11 @@ namespace ImmersiveRaids
         protected override MethodBase GetTargetMethod() => typeof(TimerPanel).GetMethod("SetTimerText", BindingFlags.Instance | BindingFlags.NonPublic);
 
         [PatchPrefix]
-        static void PreFix(ref TimerPanel __instance, ref TimeSpan timeSpan)
+        static void Prefix(ref TimerPanel __instance, ref TimeSpan timeSpan)
         {
             if (__instance is MainTimerPanel)
             {
-                timeSpan = new TimeSpan(DateTime.Now.Ticks);
+                timeSpan = new TimeSpan(RaidTime.GetDateTime().Ticks);
             }
         }
     }
@@ -82,7 +137,7 @@ namespace ImmersiveRaids
         protected override MethodBase GetTargetMethod() => typeof(SharedExfiltrationPoint).GetMethod("HasMetRequirements", BindingFlags.Instance | BindingFlags.Public);
 
         [PatchPostfix]
-        static void PostFix(string profileId, ref bool __result)
+        static void Postfix(string profileId, ref bool __result)
         {
             if (IsLockdown && profileId == Singleton<GameWorld>.Instance.AllPlayers[0].ProfileId)
             {
@@ -99,8 +154,19 @@ namespace ImmersiveRaids
         [PatchPostfix]
         static void Postfix(ref WeatherController __instance)
         {
-            Logger.LogInfo("SHIT SHOULDA RUN");
             __instance.WindController.CloudWindMultiplier = 1;
+            // weather controller is weird and makes the clouds REALLY fast if game time is set to local time
+        }
+    }
+
+    public class WatchPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod() => typeof(Watch).GetProperty("DateTime_0", BindingFlags.Instance | BindingFlags.NonPublic).GetGetMethod(true);
+
+        [PatchPostfix]
+        static void Postfix(ref DateTime __result)
+        {
+            __result = RaidTime.GetDateTime();
         }
     }
 }
