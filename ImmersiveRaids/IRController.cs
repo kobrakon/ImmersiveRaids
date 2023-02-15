@@ -1,5 +1,4 @@
 using EFT;
-using System;
 using UnityEngine;
 using System.Linq;
 using Comfort.Common;
@@ -18,7 +17,8 @@ namespace ImmersiveRaids
     {
         float timer { get; set; }
         float eventTimer { get; set; }
-        float timeToNextEvent = UnityEngine.Random.Range(1800f, 3600f);
+        //float extractGearTimer { get; set; }
+        float timeToNextEvent = Random.Range(1800f, 3600f);
 
         void Update()
         {
@@ -26,11 +26,13 @@ namespace ImmersiveRaids
             {
                 timer = 0f;
                 eventTimer = 0f;
+                //extractGearTimer = 0f;
                 return; 
             }
 
             timer += Time.deltaTime;
             if (Plugin.EnableEvents.Value) eventTimer += Time.deltaTime;
+            //extractGearTimer += Time.deltaTime;
 
             if (timer >= 2700f)
             {
@@ -41,8 +43,16 @@ namespace ImmersiveRaids
             {
                 DoRandomEvent();
                 eventTimer = 0f;
-                timeToNextEvent = UnityEngine.Random.Range(1800f, 3600f); // 30 min to hour
+                timeToNextEvent = Random.Range(1800f, 3600f); // 30 min to hour
             }
+            /*/
+            if (extractGearTimer >= 3600f)
+            {
+                if (player.Location != "Factory" && player.Location != "Laboratory")
+                    SendGearExtractCrate();
+                extractGearTimer = 0f;
+            }
+            /**/
         }
 
         async void QueueCleanup()
@@ -51,9 +61,13 @@ namespace ImmersiveRaids
 
             await Task.Delay(30000);
 
-            foreach (BotOwner bot in FindObjectsOfType<BotOwner>())
+            if (Plugin.ActuallyCleanup.Value)
             {
-                if (!bot.HealthController.IsAlive) bot.gameObject.SetActive(false);
+                foreach (BotOwner bot in FindObjectsOfType<BotOwner>())
+                {
+                    if (!bot.HealthController.IsAlive && Vector3.Distance(player.Transform.position, bot.Transform.position) >= Plugin.DistToCleanup.Value) 
+                        bot.gameObject.SetActive(false);
+                }
             }
 
             if (player.Location != "Factory" && player.Location != "Laboratory")
@@ -65,7 +79,7 @@ namespace ImmersiveRaids
 
         void DoRandomEvent(bool skipFunny = false)
         {
-            float rand = UnityEngine.Random.Range(0, 5);
+            float rand = Random.Range(0, 5);
 
             switch (rand)
             {
@@ -94,8 +108,25 @@ namespace ImmersiveRaids
                         break;
                     } else DoRandomEvent();
                 break;
+                //case 6:
+                    //DoHuntedEvent();
+                //break;
             }
         }
+
+        //void DoHuntedEvent()
+        //{
+            //NotificationManagerClass.DisplayMessageNotification("Hunted Event: AI will now hunt you down for 10 minutes.", ENotificationDurationType.Long, ENotificationIconType.Alert);
+        //}
+
+        /*/
+        void SendGearExtractCrate()
+        {
+            NotificationManagerClass.DisplayMessageNotification("An extraction airdrop is being deployed so you can secure your gear, you'll have 5 minutes after it's touched down to do so.", ENotificationDurationType.Long, ENotificationIconType.Default);
+            AirdropBoxPatch.isExtractCrate = true;
+            gameWorld.gameObject.AddComponent<AirdropsManager>().isFlareDrop = true;
+        }
+        /**/
 
         void DoHealPlayer()
         {
@@ -137,7 +168,7 @@ namespace ImmersiveRaids
 
         async void DoBlackoutEvent()
         {
-            LampController[] dontChangeOnEnd = new LampController[0];
+            Light[] dontChangeOnEnd = new Light[0];
             Dictionary<KeycardDoor, string[]> keys = new Dictionary<KeycardDoor, string[]>();
 
             foreach (Switch pSwitch in FindObjectsOfType<Switch>())
@@ -146,15 +177,16 @@ namespace ImmersiveRaids
                 typeof(Switch).GetMethod("Lock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, new object[0]);
             }
 
-            foreach (LampController lamp in FindObjectsOfType<LampController>())
+            foreach (Light lamp in FindObjectsOfType<Light>())
             {
-                if (lamp.Enabled == false) 
+                if (lamp.enabled == false) 
                 { 
                     dontChangeOnEnd.Append(lamp); 
                     continue; 
                 } 
-                lamp.Switch(Turnable.EState.Off);
-                lamp.gameObject.GetComponentInChildren<Light>().enabled = false;
+                //lamp.Switch(Turnable.EState.Off);
+                //lamp.gameObject.GetComponentInChildren<Light>().enabled = false;
+                lamp.enabled = false;
             }
 
             foreach (KeycardDoor door in FindObjectsOfType<KeycardDoor>())
@@ -173,11 +205,12 @@ namespace ImmersiveRaids
                 typeof(Switch).GetMethod("Unlock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, new object[0]);
             }
 
-            foreach (LampController lamp in FindObjectsOfType<LampController>())
+            foreach (Light lamp in FindObjectsOfType<Light>())
             {
                 if (dontChangeOnEnd.Contains(lamp)) return; 
-                lamp.Switch(Turnable.EState.On);
-                lamp.gameObject.GetComponentInChildren<Light>().enabled = true;
+                //lamp.Switch(Turnable.EState.On);
+                //lamp.gameObject.GetComponentInChildren<Light>().enabled = true;
+                lamp.enabled = true;
             }
 
             foreach (KeyValuePair<KeycardDoor, string[]> entry in keys)
