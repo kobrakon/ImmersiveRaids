@@ -47,7 +47,7 @@ class ImmersiveRaids implements IPreAkiLoadMod, IPostDBLoadMod
         for (let location in database.locations)
         {
             if (location == "base") continue;
-            database.locations[location].base.exit_access_time = 9999999; // literally makes it so the game session lasts a couple months lmao
+            database.locations[location].base.EscapeTimeLimit = 9999999; // literally makes it so the game session lasts a couple months lmao
         }
         
         globals.Health.Effects.Existence.EnergyDamage = 0.75;
