@@ -1,15 +1,18 @@
 using EFT;
+using JsonType;
 using UnityEngine;
 using System.Linq;
 using Comfort.Common;
 using EFT.Interactive;
 using EFT.HealthSystem;
 using System.Reflection;
+using EFT.UI.Matchmaker;
 using EFT.InventoryLogic;
 using EFT.Communications;
 using Aki.Custom.Airdrops;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using EFT.UI;
 
 namespace ImmersiveRaids
 {
@@ -17,22 +20,32 @@ namespace ImmersiveRaids
     {
         float timer { get; set; }
         float eventTimer { get; set; }
-        //float extractGearTimer { get; set; }
+        float extractGearTimer { get; set; }
         float timeToNextEvent = Random.Range(1800f, 3600f);
+
+        Player player
+        { get => gameWorld.AllPlayers[0]; }
+
+        GameWorld gameWorld 
+        { get => Singleton<GameWorld>.Instance; }
 
         void Update()
         {
+            RaidTime.inverted = MonoBehaviourSingleton<MenuUI>.Instance == null || MonoBehaviourSingleton<MenuUI>.Instance.MatchMakerSelectionLocationScreen == null
+            ? RaidTime.inverted
+            : !((EDateTime)typeof(MatchMakerSelectionLocationScreen).GetField("edateTime_0", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(MonoBehaviourSingleton<MenuUI>.Instance.MatchMakerSelectionLocationScreen) == EDateTime.CURR);
+
             if (!Ready()) 
             {
                 timer = 0f;
                 eventTimer = 0f;
-                //extractGearTimer = 0f;
+                extractGearTimer = 0f;
                 return; 
             }
 
             timer += Time.deltaTime;
             if (Plugin.EnableEvents.Value) eventTimer += Time.deltaTime;
-            //extractGearTimer += Time.deltaTime;
+            extractGearTimer += Time.deltaTime;
 
             if (timer >= 2700f)
             {
@@ -45,14 +58,13 @@ namespace ImmersiveRaids
                 eventTimer = 0f;
                 timeToNextEvent = Random.Range(1800f, 3600f); // 30 min to hour
             }
-            /*/
+
             if (extractGearTimer >= 3600f)
             {
                 if (player.Location != "Factory" && player.Location != "Laboratory")
                     SendGearExtractCrate();
                 extractGearTimer = 0f;
             }
-            /**/
         }
 
         async void QueueCleanup()
@@ -114,19 +126,18 @@ namespace ImmersiveRaids
             }
         }
 
-        //void DoHuntedEvent()
-        //{
-            //NotificationManagerClass.DisplayMessageNotification("Hunted Event: AI will now hunt you down for 10 minutes.", ENotificationDurationType.Long, ENotificationIconType.Alert);
-        //}
-
         /*/
+        void DoHuntedEvent()
+        {
+            NotificationManagerClass.DisplayMessageNotification("Hunted Event: AI will now hunt you down for 10 minutes.", ENotificationDurationType.Long, ENotificationIconType.Alert);
+        }/**/
+
         void SendGearExtractCrate()
         {
             NotificationManagerClass.DisplayMessageNotification("An extraction airdrop is being deployed so you can secure your gear, you'll have 5 minutes after it's touched down to do so.", ENotificationDurationType.Long, ENotificationIconType.Default);
             AirdropBoxPatch.isExtractCrate = true;
             gameWorld.gameObject.AddComponent<AirdropsManager>().isFlareDrop = true;
         }
-        /**/
 
         void DoHealPlayer()
         {
@@ -161,14 +172,16 @@ namespace ImmersiveRaids
         {
             NotificationManagerClass.DisplayMessageNotification("Lockdown Event: All extracts are unavaliable for 15 minutes", ENotificationDurationType.Long, ENotificationIconType.Alert);
             EventExfilPatch.IsLockdown = true;
+
             await Task.Delay(900000);
+
             EventExfilPatch.IsLockdown = false;
             NotificationManagerClass.DisplayMessageNotification("Lockdown Event over", ENotificationDurationType.Long, ENotificationIconType.Quest);
         }
 
         async void DoBlackoutEvent()
         {
-            Light[] dontChangeOnEnd = new Light[0];
+            LampController[] dontChangeOnEnd = new LampController[0];
             Dictionary<KeycardDoor, string[]> keys = new Dictionary<KeycardDoor, string[]>();
 
             foreach (Switch pSwitch in FindObjectsOfType<Switch>())
@@ -177,15 +190,14 @@ namespace ImmersiveRaids
                 typeof(Switch).GetMethod("Lock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, new object[0]);
             }
 
-            foreach (Light lamp in FindObjectsOfType<Light>())
+            foreach (LampController lamp in FindObjectsOfType<LampController>())
             {
                 if (lamp.enabled == false) 
                 { 
                     dontChangeOnEnd.Append(lamp); 
                     continue; 
                 } 
-                //lamp.Switch(Turnable.EState.Off);
-                //lamp.gameObject.GetComponentInChildren<Light>().enabled = false;
+                lamp.Switch(Turnable.EState.Off);
                 lamp.enabled = false;
             }
 
@@ -205,11 +217,10 @@ namespace ImmersiveRaids
                 typeof(Switch).GetMethod("Unlock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, new object[0]);
             }
 
-            foreach (Light lamp in FindObjectsOfType<Light>())
+            foreach (LampController lamp in FindObjectsOfType<LampController>())
             {
-                if (dontChangeOnEnd.Contains(lamp)) return; 
-                //lamp.Switch(Turnable.EState.On);
-                //lamp.gameObject.GetComponentInChildren<Light>().enabled = true;
+                if (dontChangeOnEnd.Contains(lamp)) continue; 
+                lamp.Switch(Turnable.EState.On);
                 lamp.enabled = true;
             }
 
@@ -222,11 +233,5 @@ namespace ImmersiveRaids
         }   
 
         public bool Ready() => gameWorld != null && gameWorld.AllPlayers != null && gameWorld.AllPlayers.Count > 0 && !(player is HideoutPlayer);
-
-        Player player
-        { get => gameWorld.AllPlayers[0]; }
-
-        GameWorld gameWorld 
-        { get => Singleton<GameWorld>.Instance; }
     }
 }

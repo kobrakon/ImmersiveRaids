@@ -7,11 +7,13 @@ using EFT.UI.Map;
 using HarmonyLib;
 using System.Linq;
 using EFT.Weather;
+using UnityEngine;
 using UnityEngine.UI;
 using Comfort.Common;
 using EFT.Interactive;
 using Newtonsoft.Json;
 using Aki.Common.Http;
+using Aki.Common.Utils;
 using EFT.UI.Matchmaker;
 using System.Reflection;
 using EFT.InventoryLogic;
@@ -25,29 +27,41 @@ using Aki.Custom.Airdrops.Utils;
 using System.Collections.Generic;
 using Aki.Custom.Airdrops.Models;
 using Aki.SinglePlayer.Utils.Progression;
-using Aki.SinglePlayer.Models.Progression;
+using Aki.SinglePlayer.Patches.Progression;
 
 #pragma warning disable IDE0051
 namespace ImmersiveRaids
 {
     public struct RaidTime
     {
-        private static DateTime lastTime;
-        public static DateTime GetDateTime() =>
-            Plugin.InvertTime.Value ?
-            ShouldChange() ?
-            lastTime = DateTime.Now.AddHours(InverseTimeDiff()) :
-            lastTime.Hour == DateTime.Now.Hour ?
-            lastTime = DateTime.Now :
-            lastTime = DateTime.Now.AddHours(InverseTimeDiff()) :
-            ShouldChange() ?
-            lastTime = DateTime.Now :
-            lastTime.Hour != DateTime.Now.Hour ?
-            lastTime = DateTime.Now.AddHours(InverseTimeDiff()) :
-            lastTime = DateTime.Now;
+        internal static bool inverted = false;
+        private static DateTime mLastTime;
+        private static DateTime lastTime
+        { 
+            get
+            {
+                if (mLastTime.Hour == DateTime.Now.AddHours(12).Hour)
+                {
+                    return mLastTime = inverseTime;
+                } else return mLastTime = DateTime.Now;
+            }
+            set => mLastTime = value;
+        }
+        private static DateTime inverseTime
+        {
+            get
+            {
+                DateTime result = DateTime.Now.AddHours(12);
+                return result.Day > DateTime.Now.Day 
+                       ? result.AddDays(-1) 
+                       : result.Day < DateTime.Now.Day 
+                       ? result.AddDays(1) : result;
+            }
+        }
 
-        private static double InverseTimeDiff() => DateTime.Now.Hour >= 12 ? -12 : 12;
-        private static bool ShouldChange() => !Plugin.Script.Ready();
+        public static DateTime GetCurrTime() => lastTime = DateTime.Now;
+        public static DateTime GetInverseTime() => lastTime = inverseTime;
+        public static DateTime GetDateTime() => inverted ? GetInverseTime() : GetCurrTime();
     }
 
     public class GameWorldPatch : ModulePatch
@@ -59,7 +73,6 @@ namespace ImmersiveRaids
         {
             DateTime time = RaidTime.GetDateTime();
             __instance.GameDateTime.Reset(time, time, 1);
-            Singleton<AbstractGame>.Instance.GameTimer.ChangeSessionTime(new TimeSpan(99999999999999)); // will literally make it so the game won't end for a couple months lel
         }
     }
 
@@ -68,36 +81,7 @@ namespace ImmersiveRaids
         protected override MethodBase GetTargetMethod() => typeof(BotControllerClass).GetMethod("BotDied", BindingFlags.Instance | BindingFlags.Public);
 
         [PatchPostfix]
-        static void Postfix(ref BotSpawnerClass ___gclass1415_0, int ___int_0) => ___gclass1415_0.SetMaxBots(___int_0++);
-    }
-
-    public class BotWaveLimitPatch : ModulePatch
-    {
-        protected override MethodBase GetTargetMethod() => typeof(WaveInfo).GetConstructor(new Type[] { typeof(int), typeof(WildSpawnType), typeof(BotDifficulty) });
-
-        [PatchPrefix]
-        static void Prefix(ref int count) => count = 9999;
-    }
-
-    public class JSONTimePatch : ModulePatch
-    {
-        protected override MethodBase GetTargetMethod() => typeof(LocationWeatherTime).GetConstructor(new Type[] { typeof(WeatherClass), typeof(float), typeof(string), typeof(string) });
-
-        [PatchPrefix]
-        static void Prefix(ref string date, ref string time)
-        {
-            var raidTime = RaidTime.GetDateTime();
-            date = raidTime.ToShortDateString();
-            time = raidTime.ToString("HH:mm:ss");
-        }
-    }
-
-    public class LocationTimePatch : ModulePatch
-    {
-        protected override MethodBase GetTargetMethod() => typeof(LocationSettingsClass.GClass1185).GetConstructor(new Type[0]);
-
-        [PatchPostfix]
-        static void Postfix(ref LocationSettingsClass.GClass1185 __instance) => __instance.exit_access_time = 9999999;
+        static void Postfix(ref BotControllerClass __instance, int ___int_0) => __instance.BotSpawner.SetMaxBots(___int_0++);
     }
 
     public class GlobalsPatch : ModulePatch
@@ -111,9 +95,7 @@ namespace ImmersiveRaids
                 await Task.Yield();
 
             BackendConfigSettingsClass globals = __instance.GetClientBackEndSession().BackEndConfig.Config;
-            globals.Health.Effects.Existence.EnergyDamage = 0.75f;
-            globals.Health.Effects.Existence.HydrationDamage = 0.75f;
-            globals.AllowSelectEntryPoint = true;
+            globals.AllowSelectEntryPoint = true; // not on server L
         }
     }
 
@@ -130,38 +112,37 @@ namespace ImmersiveRaids
         protected override MethodBase GetTargetMethod() => typeof(LocationConditionsPanel).GetMethod("method_0", BindingFlags.Instance | BindingFlags.NonPublic);
 
         [PatchPostfix]
-        static void Postfix(ref Toggle ____amTimeToggle, ref TextMeshProUGUI ____currentPhaseTime, ref TextMeshProUGUI ____nextPhaseTime)
+        static void Postfix(ref TextMeshProUGUI ____currentPhaseTime, ref TextMeshProUGUI ____nextPhaseTime)
         {
-            var raidTime = RaidTime.GetDateTime();
             try
             {
-
-                if (____amTimeToggle != null && ____currentPhaseTime != null)
-                {
-                    ____amTimeToggle.gameObject.SetActive(false);
-                    ____currentPhaseTime.gameObject.SetActive(false);
-                }
-                ____nextPhaseTime.text = raidTime.ToString("HH:mm:ss");
+                ____nextPhaseTime.text = RaidTime.GetInverseTime().ToString("HH:mm:ss");
             }
             catch (Exception) { }
-            finally { ____currentPhaseTime.text = raidTime.ToString("HH:mm:ss"); }
+            finally { ____currentPhaseTime.text = RaidTime.GetCurrTime().ToString("HH:mm:ss"); }
         }
     }
 
     public class TimerUIPatch : ModulePatch
     {
-        protected override MethodBase GetTargetMethod() => typeof(TimerPanel).GetMethod("SetTimerText", BindingFlags.Instance | BindingFlags.NonPublic);
+        protected override MethodBase GetTargetMethod() => typeof(MainTimerPanel).GetMethod("SetTimerText", BindingFlags.Instance | BindingFlags.NonPublic);
 
         [PatchPrefix]
-        static void Prefix(ref TimerPanel __instance, ref TimeSpan timeSpan)
+        static void Prefix(ref MainTimerPanel __instance, ref TimeSpan timeSpan)
         {
-            if (__instance is MainTimerPanel)
-            {
-                timeSpan = new TimeSpan(RaidTime.GetDateTime().Ticks);
-            }
+            timeSpan = new TimeSpan(RaidTime.GetDateTime().Ticks);
+
+            RectTransform mainDescription = (RectTransform)typeof(ExtractionTimersPanel).GetField("_mainDescription", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(UnityEngine.Object.FindObjectOfType<ExtractionTimersPanel>());
+
+            var text = mainDescription.gameObject.GetComponentInChildren<CustomTextMeshProUGUI>();
+            var box = mainDescription.gameObject.GetComponentInChildren<Image>();
+
+            text.text = EventExfilPatch.IsLockdown ? "Extraction unavailable" : EventExfilPatch.awaitDrop ? "Extracting gear - Exfils locked" : "Find an extraction point";
+            box.color = EventExfilPatch.IsLockdown || EventExfilPatch.awaitDrop ? new Color(0.8113f, 0.0376f, 0.0714f, 0.8627f) : new Color(0.4863f, 0.7176f, 0.0157f, 0.8627f);
         }
     }
 
+    /*/ not needed cause server plugin
     public class ExitTimerUIPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod() => typeof(MainTimerPanel).GetMethod("UpdateTimer", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -172,7 +153,7 @@ namespace ImmersiveRaids
         // call it on the MainTimerPanel instance anyway and since I have that patched it'll
         // cause an invocation loop and overload the stack
         [PatchTranspiler]
-        static IEnumerable<CodeInstruction> Transpile(IEnumerable<CodeInstruction> instructions, MethodBase original)
+        static IEnumerable<CodeInstruction> Transpile(IEnumerable<CodeInstruction> instructions)
         {
             instructions.ExecuteForEach(inst =>
             {
@@ -180,36 +161,50 @@ namespace ImmersiveRaids
                     inst.opcode = OpCodes.Ret;
             });
 
-            /*/
+            //
             output:
                 IL_0000: ldarg.0
                 IL_0001: call      instance void EFT.UI.BattleTimer.TimerPanel::UpdateTimer()
 	            IL_0006: ret
 
                 then a bunch of other ret codes cause the CLR will piss itself if you try to leave the IL without it
-            /**/
+            //
 
             return instructions;
         }
-    }
+    }/**/
 
     public class EventExfilPatch : ModulePatch
     {
         internal static bool IsLockdown = false;
         internal static bool awaitDrop = false;
 
-        protected override MethodBase GetTargetMethod() => typeof(SharedExfiltrationPoint).GetMethod(nameof(SharedExfiltrationPoint.HasMetRequirements), BindingFlags.Instance | BindingFlags.Public);
+        protected override MethodBase GetTargetMethod() => typeof(ExfiltrationRequirement).GetMethod("Met", BindingFlags.Instance | BindingFlags.Public);
 
         [PatchPostfix]
-        static void Postfix(string profileId, ref bool __result)
+        static void Postfix(Player player, ref bool __result)
         {
-            if (profileId == Singleton<GameWorld>.Instance.AllPlayers[0].ProfileId)
+            if (player.IsYourPlayer)
             {
-                __result = IsLockdown || awaitDrop ? false : __result;
-                if (IsLockdown) NotificationManagerClass.DisplayMessageNotification("Cannot extract during a lockdown", ENotificationDurationType.Long, ENotificationIconType.Alert);
-                if (awaitDrop) NotificationManagerClass.DisplayMessageNotification("Your gear hasn't been extracted yet", ENotificationDurationType.Long, ENotificationIconType.Alert);
+                if (IsLockdown || awaitDrop)
+                {
+                    NotificationManagerClass.DisplayMessageNotification(IsLockdown ? "Cannot extract during a lockdown" : "Your gear hasn't been extracted yet", ENotificationDurationType.Long, ENotificationIconType.Alert);
+                    __result = false;
+                }
+                __result = true;
             }
+            __result = true;
         }
+    }
+
+    // bleehhh
+    public class EventExfilTipPatch : ModulePatch
+    {
+        protected override MethodBase GetTargetMethod() => typeof(ExfiltrationRequirement).GetMethod("GetLocalizedTip", BindingFlags.Instance | BindingFlags.Public);
+
+        [PatchPostfix]
+        static void Postfix(ref string __result) => 
+            __result = EventExfilPatch.IsLockdown ? "Cannot extract during a lockdown" : EventExfilPatch.awaitDrop ? "Your gear hasn't been extracted yet" : __result;
     }
 
     public class WeatherControllerPatch : ModulePatch
@@ -221,11 +216,12 @@ namespace ImmersiveRaids
         // weather controller is weird and makes the clouds REALLY fast if game time is set to local time
     }
 
-    // WIP!!!! NOT DONE!!!          
-    /*/public class AirdropBoxPatch : ModulePatch
+    // WIP!!!! NOT DONE!!!
+    public class AirdropBoxPatch : ModulePatch
     {
         internal static bool isExtractCrate = false;
         internal static List<Item> gearToExtract = new List<Item>();
+        internal static List<Item> gearToSend = new List<Item>();
 
         protected override MethodBase GetTargetMethod() => typeof(AirdropsManager).GetMethod("BuildLootContainer", BindingFlags.Instance | BindingFlags.NonPublic);
 
@@ -234,7 +230,7 @@ namespace ImmersiveRaids
         {
             if (!isExtractCrate) return true;
             ___factory.BuildContainer(___airdropBox.container);
-            ___airdropParameters.containerBuilt = true;
+            ___airdropParameters.AirdropAvailable = true;
             return false;
         }
 
@@ -251,7 +247,7 @@ namespace ImmersiveRaids
             if (!isExtractCrate) return;
             isExtractCrate = false;
 
-            while (!param.parachuteComplete)
+            while (Vector3.Distance(box.transform.position, param.RandomAirdropPoint) > 3f)
             {
                 await Task.Yield();
             }
@@ -275,76 +271,51 @@ namespace ImmersiveRaids
             gearToExtract.ExecuteForEach(item => 
             { 
                 item.CurrentAddress = null; // fuck yourself 
-                StashPatch.gearToSend.Add(item); 
+                gearToSend.Add(item); 
             });
 
             gearToExtract.Clear();
             EventExfilPatch.awaitDrop = false;
-        }
-    }
-
-    public class StashPatch : ModulePatch
-    {
-        internal static object[] data = new object[0];
-        internal static List<Item> gearToSend = new List<Item>();
-
-        internal static JsonConverter[] converters
-        { 
-            get => typeof(OfflineSaveProfilePatch)
-               .GetProperty("_defaultJsonConverters", BindingFlags.Static | BindingFlags.NonPublic)
-               .GetValue(null); // i'll be takin that
+            SendGear();
         }
 
-        protected override MethodBase GetTargetMethod() => typeof(TarkovApplication).GetMethod("method_43", BindingFlags.Instance | BindingFlags.NonPublic);
-
-        [PatchPostfix]
-        static async void Postfix()
+        static void SendGear()
         {
-            if (!gearToSend.Any() || screen != EMenuType.MainMenu || !turnOn) return;
+            if (!gearToSend.Any())
+                return;
 
-            if (Plugin.Script.Ready() || Singleton<SessionResultPanel>.Instantiated) return;
+            if (Plugin.Script.Ready() || Singleton<SessionResultPanel>.Instantiated)
+                return;
 
             ISession session = UnityEngine.Object.FindObjectOfType<TarkovApplication>().GetClientBackEndSession();
             Profile profile = session.Profile;
 
-            while (profile.Inventory.Stash == null)
+            /*/while (profile.Inventory.Stash == null)
                 await Task.Yield();
 
             foreach (Item i in gearToSend)
             {
                 profile.Inventory.Stash.Grid.Add(i);
-            }
+            }/**/
 
             UpdateProfileRequest req = new UpdateProfileRequest
             {
                 player = profile
             };
 
-            RequestHandler.PutJson("/ir/profile/update", req.ToJson(converters.AddItem(new NotesJsonConverter()).ToArray()));
+            RequestHandler.PutJson("/ir/profile/update", Json.Serialize(req));
 
             gearToSend.Clear();
 
             Logger.LogInfo("IR : Added extract gear to stash");
         }
 
-
         struct UpdateProfileRequest
         {
             [JsonProperty("profile")] // go figure
-            Profile player;
+            internal Profile player;
         }
     }
-
-    public class DataPassthroughPatch : ModulePatch
-    {
-        protected override MethodBase GetTargetMethod() => typeof(TarkovApplication).GetMethod("method_43", BindingFlags.Instance | BindingFlags.NonPublic);
-
-        [PatchPostfix]
-        static void Postfix(RaidSettings ____raidSettings, Result<ExitStatus, TimeSpan, ClientMetrics> result)
-        {
-            if (StashPatch.gearToSend.Any()) StashPatch.data = new object[] { ____raidSettings, result };
-        }
-    }/**/
 
     public class FactoryTimePatch : ModulePatch
     {
