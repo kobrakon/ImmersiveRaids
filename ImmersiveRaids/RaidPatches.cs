@@ -35,18 +35,7 @@ namespace ImmersiveRaids
     public struct RaidTime
     {
         internal static bool inverted = false;
-        private static DateTime mLastTime;
-        private static DateTime lastTime
-        { 
-            get
-            {
-                if (mLastTime.Hour == DateTime.Now.AddHours(12).Hour)
-                {
-                    return mLastTime = inverseTime;
-                } else return mLastTime = DateTime.Now;
-            }
-            set => mLastTime = value;
-        }
+
         private static DateTime inverseTime
         {
             get
@@ -59,8 +48,8 @@ namespace ImmersiveRaids
             }
         }
 
-        public static DateTime GetCurrTime() => lastTime = DateTime.Now;
-        public static DateTime GetInverseTime() => lastTime = inverseTime;
+        public static DateTime GetCurrTime() => DateTime.Now;
+        public static DateTime GetInverseTime() => inverseTime;
         public static DateTime GetDateTime() => inverted ? GetInverseTime() : GetCurrTime();
     }
 
@@ -128,21 +117,9 @@ namespace ImmersiveRaids
         protected override MethodBase GetTargetMethod() => typeof(MainTimerPanel).GetMethod("SetTimerText", BindingFlags.Instance | BindingFlags.NonPublic);
 
         [PatchPrefix]
-        static void Prefix(ref MainTimerPanel __instance, ref TimeSpan timeSpan)
-        {
-            timeSpan = new TimeSpan(RaidTime.GetDateTime().Ticks);
-
-            RectTransform mainDescription = (RectTransform)typeof(ExtractionTimersPanel).GetField("_mainDescription", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(UnityEngine.Object.FindObjectOfType<ExtractionTimersPanel>());
-
-            var text = mainDescription.gameObject.GetComponentInChildren<CustomTextMeshProUGUI>();
-            var box = mainDescription.gameObject.GetComponentInChildren<Image>();
-
-            text.text = EventExfilPatch.IsLockdown ? "Extraction unavailable" : EventExfilPatch.awaitDrop ? "Extracting gear - Exfils locked" : "Find an extraction point";
-            box.color = EventExfilPatch.IsLockdown || EventExfilPatch.awaitDrop ? new Color(0.8113f, 0.0376f, 0.0714f, 0.8627f) : new Color(0.4863f, 0.7176f, 0.0157f, 0.8627f);
-        }
+        static void Prefix(ref TimeSpan timeSpan) => timeSpan = new TimeSpan(RaidTime.GetDateTime().Ticks);
     }
 
-    /*/ not needed cause server plugin
     public class ExitTimerUIPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod() => typeof(MainTimerPanel).GetMethod("UpdateTimer", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -155,24 +132,29 @@ namespace ImmersiveRaids
         [PatchTranspiler]
         static IEnumerable<CodeInstruction> Transpile(IEnumerable<CodeInstruction> instructions)
         {
-            instructions.ExecuteForEach(inst =>
+            int shift = 0;
+
+            instructions.ExecuteForEach((inst) =>
             {
-                if (instructions.IndexOf(inst) > 1)
+                if (shift == 2)
                     inst.opcode = OpCodes.Ret;
+                if (shift >= 3)
+                    inst.opcode = OpCodes.Nop;
+                shift++;
             });
 
-            //
+            /*/
             output:
                 IL_0000: ldarg.0
                 IL_0001: call      instance void EFT.UI.BattleTimer.TimerPanel::UpdateTimer()
 	            IL_0006: ret
 
                 then a bunch of other ret codes cause the CLR will piss itself if you try to leave the IL without it
-            //
+            /**/
 
             return instructions;
         }
-    }/**/
+    }
 
     public class EventExfilPatch : ModulePatch
     {
@@ -197,16 +179,6 @@ namespace ImmersiveRaids
         }
     }
 
-    // bleehhh
-    public class EventExfilTipPatch : ModulePatch
-    {
-        protected override MethodBase GetTargetMethod() => typeof(ExfiltrationRequirement).GetMethod("GetLocalizedTip", BindingFlags.Instance | BindingFlags.Public);
-
-        [PatchPostfix]
-        static void Postfix(ref string __result) => 
-            __result = EventExfilPatch.IsLockdown ? "Cannot extract during a lockdown" : EventExfilPatch.awaitDrop ? "Your gear hasn't been extracted yet" : __result;
-    }
-
     public class WeatherControllerPatch : ModulePatch
     {
         protected override MethodBase GetTargetMethod() => typeof(WeatherController).GetMethod("Awake", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -217,6 +189,7 @@ namespace ImmersiveRaids
     }
 
     // WIP!!!! NOT DONE!!!
+    /*/
     public class AirdropBoxPatch : ModulePatch
     {
         internal static bool isExtractCrate = false;
@@ -279,31 +252,27 @@ namespace ImmersiveRaids
             SendGear();
         }
 
-        static void SendGear()
+        static async void SendGear()
         {
-            if (!gearToSend.Any())
-                return;
-
-            if (Plugin.Script.Ready() || Singleton<SessionResultPanel>.Instantiated)
+            if (Plugin.Script.Ready() || Singleton<SessionResultPanel>.Instantiated || !gearToSend.Any())
                 return;
 
             ISession session = UnityEngine.Object.FindObjectOfType<TarkovApplication>().GetClientBackEndSession();
             Profile profile = session.Profile;
 
-            /*/while (profile.Inventory.Stash == null)
+            /
+            while (profile.Inventory.Stash == null)
                 await Task.Yield();
 
             foreach (Item i in gearToSend)
             {
                 profile.Inventory.Stash.Grid.Add(i);
-            }/**/
+            }
+            /
 
-            UpdateProfileRequest req = new UpdateProfileRequest
-            {
-                player = profile
-            };
+            UpdateProfileRequest req = new UpdateProfileRequest(profile);
 
-            RequestHandler.PutJson("/ir/profile/update", Json.Serialize(req));
+            await Task.Run(() => RequestHandler.PutJson("/ir/profile/update", Json.Serialize(req)));
 
             gearToSend.Clear();
 
@@ -314,8 +283,11 @@ namespace ImmersiveRaids
         {
             [JsonProperty("profile")] // go figure
             internal Profile player;
+
+            internal UpdateProfileRequest(Profile profile) => this.player = profile;
         }
     }
+    /**/
 
     public class FactoryTimePatch : ModulePatch
     {

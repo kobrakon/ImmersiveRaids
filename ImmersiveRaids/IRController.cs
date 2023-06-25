@@ -1,27 +1,29 @@
 using EFT;
+using EFT.UI;
 using JsonType;
 using UnityEngine;
 using System.Linq;
 using Comfort.Common;
+using UnityEngine.UI;
 using EFT.Interactive;
 using EFT.HealthSystem;
 using System.Reflection;
 using EFT.UI.Matchmaker;
 using EFT.InventoryLogic;
 using EFT.Communications;
+using EFT.UI.BattleTimer;
 using Aki.Custom.Airdrops;
 using System.Threading.Tasks;
-using System.Collections.Generic;
-using EFT.UI;
 
 namespace ImmersiveRaids
 {
     public class IRController : MonoBehaviour
     {
-        float timer { get; set; }
-        float eventTimer { get; set; }
-        float extractGearTimer { get; set; }
+        float timer;
+        float eventTimer;
+        //float extractGearTimer;
         float timeToNextEvent = Random.Range(1800f, 3600f);
+        bool exfilUIChanged = false;
 
         Player player
         { get => gameWorld.AllPlayers[0]; }
@@ -39,13 +41,13 @@ namespace ImmersiveRaids
             {
                 timer = 0f;
                 eventTimer = 0f;
-                extractGearTimer = 0f;
+                //extractGearTimer = 0f;
                 return; 
             }
 
             timer += Time.deltaTime;
             if (Plugin.EnableEvents.Value) eventTimer += Time.deltaTime;
-            extractGearTimer += Time.deltaTime;
+            //extractGearTimer += Time.deltaTime;
 
             if (timer >= 2700f)
             {
@@ -59,11 +61,50 @@ namespace ImmersiveRaids
                 timeToNextEvent = Random.Range(1800f, 3600f); // 30 min to hour
             }
 
+            /*/
             if (extractGearTimer >= 3600f)
             {
                 if (player.Location != "Factory" && player.Location != "Laboratory")
                     SendGearExtractCrate();
                 extractGearTimer = 0f;
+            }
+            /**/
+
+            if (EventExfilPatch.IsLockdown || EventExfilPatch.awaitDrop)
+                if (!exfilUIChanged) 
+                    ChangeExfilUI();
+        }
+
+        // moved from patch impacted performance too much
+        async void ChangeExfilUI()
+        {
+            if (EventExfilPatch.IsLockdown || EventExfilPatch.awaitDrop)
+            {
+                Color red = new Color(0.8113f, 0.0376f, 0.0714f, 0.8627f);
+                Color green = new Color(0.4863f, 0.7176f, 0.0157f, 0.8627f);
+                RectTransform mainDescription = (RectTransform)typeof(ExtractionTimersPanel).GetField("_mainDescription", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(FindObjectOfType<ExtractionTimersPanel>());
+
+                var text = mainDescription.gameObject.GetComponentInChildren<CustomTextMeshProUGUI>();
+                var box = mainDescription.gameObject.GetComponentInChildren<Image>();
+
+                text.text = EventExfilPatch.IsLockdown ? "Extraction unavailable" : EventExfilPatch.awaitDrop ? "Extracting gear - Exfils locked" : "Find an extraction point";
+                box.color = red;
+
+                foreach (ExitTimerPanel panel in FindObjectsOfType<ExitTimerPanel>())
+                    panel.enabled = false;
+
+                exfilUIChanged = true;
+
+                while (EventExfilPatch.IsLockdown || EventExfilPatch.awaitDrop)
+                    await Task.Yield();
+
+                text.text = "Find an extraction point";
+                box.color = green;
+
+                foreach (ExitTimerPanel panel in FindObjectsOfType<ExitTimerPanel>())
+                    panel.enabled = true;
+                
+                exfilUIChanged = false;
             }
         }
 
@@ -130,14 +171,17 @@ namespace ImmersiveRaids
         void DoHuntedEvent()
         {
             NotificationManagerClass.DisplayMessageNotification("Hunted Event: AI will now hunt you down for 10 minutes.", ENotificationDurationType.Long, ENotificationIconType.Alert);
-        }/**/
+        }
+        /**/
 
+        /*/
         void SendGearExtractCrate()
         {
             NotificationManagerClass.DisplayMessageNotification("An extraction airdrop is being deployed so you can secure your gear, you'll have 5 minutes after it's touched down to do so.", ENotificationDurationType.Long, ENotificationIconType.Default);
             AirdropBoxPatch.isExtractCrate = true;
             gameWorld.gameObject.AddComponent<AirdropsManager>().isFlareDrop = true;
         }
+        /**/
 
         void DoHealPlayer()
         {
@@ -182,12 +226,11 @@ namespace ImmersiveRaids
         async void DoBlackoutEvent()
         {
             LampController[] dontChangeOnEnd = new LampController[0];
-            Dictionary<KeycardDoor, string[]> keys = new Dictionary<KeycardDoor, string[]>();
 
             foreach (Switch pSwitch in FindObjectsOfType<Switch>())
             {
-                typeof(Switch).GetMethod("Close", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, new object[0]);
-                typeof(Switch).GetMethod("Lock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, new object[0]);
+                typeof(Switch).GetMethod("Close", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, null);
+                typeof(Switch).GetMethod("Lock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, null);
             }
 
             foreach (LampController lamp in FindObjectsOfType<LampController>())
@@ -203,8 +246,7 @@ namespace ImmersiveRaids
 
             foreach (KeycardDoor door in FindObjectsOfType<KeycardDoor>())
             {
-                typeof(KeycardDoor).GetMethod("Lock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(door, new object[0]);
-                keys.Add(door, (string[])typeof(KeycardDoor).GetField("_additionalKeys", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(door));
+                typeof(KeycardDoor).GetMethod("Unlock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(door, null);
                 AudioSource.PlayClipAtPoint(door.DeniedBeep, door.gameObject.transform.position);
             }
 
@@ -214,7 +256,7 @@ namespace ImmersiveRaids
 
             foreach(Switch pSwitch in FindObjectsOfType<Switch>())
             {
-                typeof(Switch).GetMethod("Unlock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, new object[0]);
+                typeof(Switch).GetMethod("Unlock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pSwitch, null);
             }
 
             foreach (LampController lamp in FindObjectsOfType<LampController>())
@@ -224,13 +266,32 @@ namespace ImmersiveRaids
                 lamp.enabled = true;
             }
 
-            foreach (KeyValuePair<KeycardDoor, string[]> entry in keys)
-            {
-                typeof(KeycardDoor).GetField("_additionalKeys", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(entry.Key, new object[] { entry.Value });
-            }
-            keys.Clear();
+            foreach (KeycardDoor door in FindObjectsOfType<KeycardDoor>())
+                await Task.Run(async () => 
+                {
+                    int timesToBeep = 3;
+                    await Task.Delay(5000);
+
+                    goto beep;
+
+                    beep:
+                        await Task.Delay(500);
+
+                        if (timesToBeep == 0)
+                            goto unlock;
+                        
+                        AudioSource.PlayClipAtPoint(door.DeniedBeep, door.gameObject.transform.position);
+                        goto beep;
+
+                    unlock:
+                        typeof(KeycardDoor).GetMethod("Lock", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(door, null);
+                        AudioSource.PlayClipAtPoint(door.UnlockSound, door.gameObject.transform.position);
+                        return;
+
+                });
+
             NotificationManagerClass.DisplayMessageNotification("Blackout Event over", ENotificationDurationType.Long, ENotificationIconType.Quest);
-        }   
+        }
 
         public bool Ready() => gameWorld != null && gameWorld.AllPlayers != null && gameWorld.AllPlayers.Count > 0 && !(player is HideoutPlayer);
     }

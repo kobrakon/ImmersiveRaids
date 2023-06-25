@@ -30,9 +30,9 @@ namespace ImmersiveRaids
             new UIPanelPatch().Enable();
             new TimerUIPatch().Enable();
             new EventExfilPatch().Enable();
-            new EventExfilTipPatch().Enable();
+            //new EventExfilTipPatch().Enable();
             new WeatherControllerPatch().Enable();
-            new AirdropBoxPatch().Enable();
+            //new AirdropBoxPatch().Enable();
             new FactoryTimePatch().Enable();
             new BotDiedPatch().Enable();
             new GlobalsPatch().Enable();
