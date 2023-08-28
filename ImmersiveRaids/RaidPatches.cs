@@ -103,10 +103,7 @@ namespace ImmersiveRaids
         [PatchPostfix]
         static void Postfix(ref TextMeshProUGUI ____currentPhaseTime, ref TextMeshProUGUI ____nextPhaseTime)
         {
-            try
-            {
-                ____nextPhaseTime.text = RaidTime.GetInverseTime().ToString("HH:mm:ss");
-            }
+            try { ____nextPhaseTime.text = RaidTime.GetInverseTime().ToString("HH:mm:ss"); }
             catch (Exception) { }
             finally { ____currentPhaseTime.text = RaidTime.GetCurrTime().ToString("HH:mm:ss"); }
         }
@@ -149,7 +146,7 @@ namespace ImmersiveRaids
                 IL_0001: call      instance void EFT.UI.BattleTimer.TimerPanel::UpdateTimer()
 	            IL_0006: ret
 
-                then a bunch of other ret codes cause the CLR will piss itself if you try to leave the IL without it
+                then a bunch of other nop codes cause the CLR will piss itself if you try to leave the IL without it
             /**/
 
             return instructions;
@@ -189,7 +186,6 @@ namespace ImmersiveRaids
     }
 
     // WIP!!!! NOT DONE!!!
-    /*/
     public class AirdropBoxPatch : ModulePatch
     {
         internal static bool isExtractCrate = false;
@@ -260,7 +256,6 @@ namespace ImmersiveRaids
             ISession session = UnityEngine.Object.FindObjectOfType<TarkovApplication>().GetClientBackEndSession();
             Profile profile = session.Profile;
 
-            /
             while (profile.Inventory.Stash == null)
                 await Task.Yield();
 
@@ -268,7 +263,6 @@ namespace ImmersiveRaids
             {
                 profile.Inventory.Stash.Grid.Add(i);
             }
-            /
 
             UpdateProfileRequest req = new UpdateProfileRequest(profile);
 
@@ -284,10 +278,9 @@ namespace ImmersiveRaids
             [JsonProperty("profile")] // go figure
             internal Profile player;
 
-            internal UpdateProfileRequest(Profile profile) => this.player = profile;
+            internal UpdateProfileRequest(Profile profile) => player = profile;
         }
     }
-    /**/
 
     public class FactoryTimePatch : ModulePatch
     {

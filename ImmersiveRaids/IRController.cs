@@ -26,7 +26,7 @@ namespace ImmersiveRaids
         bool exfilUIChanged = false;
 
         Player player
-        { get => gameWorld.AllPlayers[0]; }
+        { get => gameWorld.MainPlayer; }
 
         GameWorld gameWorld 
         { get => Singleton<GameWorld>.Instance; }
@@ -293,6 +293,6 @@ namespace ImmersiveRaids
             NotificationManagerClass.DisplayMessageNotification("Blackout Event over", ENotificationDurationType.Long, ENotificationIconType.Quest);
         }
 
-        public bool Ready() => gameWorld != null && gameWorld.AllPlayers != null && gameWorld.AllPlayers.Count > 0 && !(player is HideoutPlayer);
+        public bool Ready() => gameWorld != null && gameWorld.AllAlivePlayersList != null && gameWorld.AllAlivePlayersList.Count > 0 && !(player is HideoutPlayer);
     }
 }
